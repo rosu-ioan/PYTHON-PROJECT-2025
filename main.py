@@ -56,10 +56,17 @@ def validate_update_command_args(args: argparse.Namespace):
 
 def validate_create_command_args(args: argparse.Namespace):
     """Validates the arguments for the "create" command."""
-    if not validate_file(args.file_from) or not validate_file(args.file_to):
+    for file_path in args.old_files:
+        if not validate_file(file_path):
+            sys.exit(1)
+
+    if not validate_file(args.latest_file):
         sys.exit(1)
 
-    print_table_color({"Old file":args.file_from, "New file":args.file_to})
+    print_table_color({
+        "Latest file":args.latest_file,
+         **{f"Old version({i})":file_name for (i, file_name) in enumerate(args.old_files)}
+    })
 
 def main():
     """Parse the command line arguments and delegate tasks to appropriate functions."""
@@ -72,8 +79,9 @@ def main():
     subparsers = cmd_args_parser.add_subparsers(dest="command", required=True)
 
     create_command_parser = subparsers.add_parser("create")
-    create_command_parser.add_argument("file_from", help="The path to the first file in the diff")
-    create_command_parser.add_argument("file_to", help="The path to the second file in the diff")
+    create_command_parser.add_argument("old_files", nargs="+",
+                                       help="The path to one or more older versions of the file")
+    create_command_parser.add_argument("latest_file", help="The path to the latest version of the file")
 
 
     update_command_parser = subparsers.add_parser("update")
