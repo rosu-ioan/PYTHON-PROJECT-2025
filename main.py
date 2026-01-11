@@ -3,6 +3,8 @@ from rich import print
 import argparse
 import sys
 
+import facade
+
 def print_error(msg: str):
     """Print an error message with a colored "ERROR" prefix."""
 
@@ -82,6 +84,7 @@ def main():
     create_command_parser.add_argument("old_files", nargs="+",
                                        help="The path to one or more older versions of the file")
     create_command_parser.add_argument("latest_file", help="The path to the latest version of the file")
+    create_command_parser.add_argument("--chunk_size", help="The size of the chunk that will be read from both files at a time", type=int)
 
 
     update_command_parser = subparsers.add_parser("update")
@@ -93,6 +96,7 @@ def main():
     match cmd_args.command:
         case "create":
             validate_create_command_args(cmd_args)
+            facade.execute_create_command(cmd_args)
         case "update":
             validate_update_command_args(cmd_args)
     

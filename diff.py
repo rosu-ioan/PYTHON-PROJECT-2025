@@ -90,8 +90,12 @@ class MyersLinear:
         """
         Compute the difference between sequence A and B.
 
+        Apply myers diff algorithm in O((N+M)D) time and O(N+M) space in order to compute the
+        shortest edit script with delete/insert operations. Then merge adjacent delete + insert operations
+        into a change operation. 
+        
         Returns:
-            A list of DiffOp representind the edits
+            A list of DiffOp(Insert/Delete/Change) representing the edits
         """
         self.diff_ops = []
         self._find_path(0, 0, len(self.A), len(self.B))
@@ -102,6 +106,9 @@ class MyersLinear:
     def ses(self) -> int:
         """
         Calculate the length of the shortest edit script(SES).
+
+        The length of the SES is measured as if the edit script contains only delete or insert operations
+        in order to be compatible with other myers implementations for testing purposes. 
 
         Returns:
            The total number of operations at the granularity of byte
@@ -175,6 +182,8 @@ class MyersLinear:
         if snake is None:
             return None
         
+        (start, finish), is_forward = snake
+        
         if box.width == 0:
             if box.height > 0:
                 payload = self.B[box.top:box.bottom]
@@ -186,18 +195,23 @@ class MyersLinear:
                 length = box.right - box.left
                 self.diff_ops.append(Delete(box.left, length))
             return
-        
-        start, finish = snake
 
+        self._find_path(box.left, box.top, start[0], start[1])
+        
         dx = finish[0] - start[0]
         dy = finish[1] - start[1]
 
         if dy > dx:
-            self.diff_ops.append(Insert(start[0], self.B[start[1]:start[1]+1]))
+            if is_forward:
+                self.diff_ops.append(Insert(start[0], self.B[start[1]:start[1]+1]))
+            else:
+                self.diff_ops.append(Insert(finish[0], self.B[finish[1] - 1:finish[1]]))
         elif dx > dy:
-            self.diff_ops.append(Delete(start[0], 1))
+            if is_forward:
+                self.diff_ops.append(Delete(start[0], 1))
+            else:
+                self.diff_ops.append(Delete(finish[0]-1, 1))
         
-        self._find_path(box.left, box.top, start[0], start[1])
         self._find_path(finish[0], finish[1], box.right, box.bottom)
 
     def _midpoint(self, box: Box):
@@ -216,9 +230,9 @@ class MyersLinear:
             bwd = self._backward(box, vf, vb, d)
 
             if fwd is not None:
-                return fwd
+                return (fwd, True)
             if bwd is not None:
-                return bwd
+                return (bwd, False)
 
     def _forward(self, box: Box, vf: list[int], vb: list[int], d: int):
         for k in range(-d, d+1, 2):
@@ -266,13 +280,60 @@ class MyersLinear:
             
         return None
 
+def patch(original: bytes, operations: list[DiffOp]) -> bytes:
+    """
+    Reconstructs the target file from the original and the diff operations.
+    
+    Args:
+        original -- The original byte sequence
+        operations -- A sorted list of Insert, Delete, Change operations
+    
+    Returns:
+        The patched byte sequence
+        
+    Raises:
+        ValueError -- If operations are out of order or overlapping
+    """
+    
+    result = bytearray()
+    cursor = 0
+    
+    for i, op in enumerate(operations):
+        if op.position < cursor:
+             raise ValueError(f"Op #{i} at {op.position} overlaps with cursor at {cursor}. "
+                              "Operations must be sorted and non-overlapping.")
+
+        if cursor < op.position:
+            result.extend(original[cursor:op.position])
+            cursor = op.position
+            
+        if isinstance(op, Insert):
+            result.extend(op.payload)
+            
+        elif isinstance(op, Delete):
+            cursor += op.length
+            
+        elif isinstance(op, Change):
+            result.extend(op.payload)
+            cursor += len(op.payload)
+
+    if cursor < len(original):
+        result.extend(original[cursor:])
+        
+    return bytes(result)
+    
 
 if __name__ == "__main__":            
-    # myers = MyersLinear("abcabba", "cbabac")
-    # print(myers.diff())
+    myers = MyersLinear("abcabba", "cbabac")
+    print(myers.diff())
 
     # myers = MyersLinear("jbjqzkwcmbhawqmdg", "cnbtjoncoopbargkq")
     # print(myers.diff())
 
+    # iters = 20
+    # for i in range(iters):
+    #     s1 = "".join(random.choices(string.ascii_lowercase, k=random.randint(5, 20)))
+    #     s2 = "".join(random.choices(string.ascii_lowercase, k=random.randint(5, 20)))
 
+    #     print(MyersLinear(s1,s2).diff())
 

@@ -1,0 +1,125 @@
+"""
+binary_io.py
+
+Handles the binary encoding and decoding of diff operations.
+Implements the streaming generation of .diff files from large inputs.
+"""
+
+import struct
+from typing import List, Generator, BinaryIO
+from diff import Insert, Delete, Change, DiffOp, MyersLinear
+
+MAGIC_HEADER = b"MYDIFF"
+
+OP_INSERT = 0x01
+OP_DELETE = 0x02
+OP_CHANGE = 0x03
+
+def encode_ops(operations: List[DiffOp]) -> bytes:
+    """
+    Serialize a list of DiffOps into a binary byte string.
+    
+    Format per Op:
+    [OpCode (1B)] [Position (8B)] [Length (8B)] [Payload (Length B)]
+
+    Args:
+        operations -- a list of DiffOp(Insert/Delete/Change)
+
+    Returns:
+        The binary representation of the operations
+    """
+    
+    binary_buffer = bytearray()
+    
+    for op in operations:
+        if isinstance(op, Insert):
+            code = OP_INSERT
+            payload = op.payload
+            length = len(payload)
+        elif isinstance(op, Delete):
+            code = OP_DELETE
+            payload = b""
+            length = op.length
+        elif isinstance(op, Change):
+            code = OP_CHANGE
+            payload = op.payload
+            length = len(payload)
+            
+        # Pack Metadata: ! = Big Endian, B = uchar, Q = ulonglong
+        # Structure: Opcode (1) + Position (8) + Length (8) = 17 bytes fixed header
+        header = struct.pack("!BQQ", code, op.position, length)
+        
+        binary_buffer.extend(header)
+        if payload:
+            binary_buffer.extend(payload)
+            
+    return bytes(binary_buffer)
+
+def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str, chunk_size: int = 1024 * 1024):
+    """
+    Reads two files in chunks, calculates diffs, and streams the binary output to a .diff file.
+
+    Args:
+        old_file_path -- The path to the original file that should be modified
+        new_file_path -- The path to the target file that the old file would be modified into
+        output_path -- The path for the resulting .diff file
+        chunk_size -- Size of the chunk that would be read from each file at a time
+    """
+    
+    with open(old_file_path, "rb") as f_old, \
+         open(new_file_path, "rb") as f_new, \
+         open(output_path, "wb") as f_out:
+        
+        f_out.write(MAGIC_HEADER)
+        
+        abs_offset = 0
+        
+        while True:
+            chunk_a = f_old.read(chunk_size)
+            chunk_b = f_new.read(chunk_size)
+            
+            if not chunk_a and not chunk_b:
+                break
+                
+            # if not chunk_a:
+            #     chunk_a = b""
+            # if not chunk_b:
+            #     chunk_b = b""
+            
+            ops = MyersLinear(chunk_a, chunk_b).diff()
+            for op in ops:
+                op.position += abs_offset
+                
+            binary_data = encode_ops(ops)
+            f_out.write(binary_data)
+            
+            abs_offset += len(chunk_a)
+
+
+def load_ops_from_file(diff_file_path: str) -> Generator[DiffOp, None, None]:
+    """
+    Load the DiffOp operations from a .diff file
+
+    Args:
+        diff_file_path -- path to the .diff file containing the binary representation of a list of DiffOps
+    
+    Returns:
+        A generator that yields one DiffOp at a time from the .diff file
+    """
+    with open(diff_file_path, "rb") as f:
+        header = f.read(len(MAGIC_HEADER))
+            
+        while True:
+            chunk = f.read(17)
+            if not chunk: break
+            
+            code, pos, length = struct.unpack("!BQQ", chunk)
+            
+            if code == OP_INSERT:
+                payload = f.read(length)
+                yield Insert(pos, payload)
+            elif code == OP_DELETE:
+                yield Delete(pos, length)
+            elif code == OP_CHANGE:
+                payload = f.read(length)
+                yield Change(pos, payload)

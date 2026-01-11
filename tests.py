@@ -5,8 +5,7 @@ import string
 from hypothesis import given, strategies as st
 from dataclasses import dataclass
 from rich import print
-from diff import MyersLinear
-
+from diff import MyersLinear, Insert, Delete, Change, DiffOp, patch
 
 def random_validation(iters=20):
     mismatch = False
@@ -33,6 +32,7 @@ def random_validation(iters=20):
         print("[red]There's been an error[/red]")
     else:
         print("[green]All tests passed[/green]")
+
 
 @given(st.text(), st.text())
 def test_myers_properties(a, b):
@@ -73,6 +73,26 @@ def test_against_reference_library(a, b):
     
     # 4. Compare
     assert actual_d == expected_d, f"Failed on a={repr(a)}, b={repr(b)}"
+
+@given(st.binary(), st.binary())
+def test_patch_reconstruction(a, b):
+    """
+    Property: applying the diff of (A, B) to A must always yield B.
+    """
+    # 1. Compute Diff
+    ops = MyersLinear(a, b).diff()
+    
+    # 2. Apply Patch
+    reconstructed = patch(a, ops)
+    
+    # 3. Assert Equality
+    # This gives us a rigorous check that your operations are valid
+    assert reconstructed == b, (
+        f"Reconstruction failed!\n"
+        f"Expected len: {len(b)}\n"
+        f"Got len:      {len(reconstructed)}\n"
+        f"Diff Ops:     {len(ops)}"
+    )
     
 if __name__ == "__main__":
     random_validation(100)
