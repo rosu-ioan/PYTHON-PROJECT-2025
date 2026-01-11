@@ -8,9 +8,10 @@ the shortest edit script.
 """
 
 from dataclasses import dataclass
-from itertools import pairwise
-import math
 from typing import Optional
+import math
+import random
+import string
 
 @dataclass
 class Insert:
@@ -41,7 +42,7 @@ class Change:
     @property
     def es_len(self) -> int:
         """Return the length of the edit script for this operation"""
-        return len(self.payload)
+        return 2*len(self.payload)
 
 DiffOp = Insert | Delete | Change
     
@@ -94,6 +95,8 @@ class MyersLinear:
         """
         self.diff_ops = []
         self._find_path(0, 0, len(self.A), len(self.B))
+        self._merge()
+        self._consolidate()
         return self.diff_ops
 
     def ses(self) -> int:
@@ -106,7 +109,65 @@ class MyersLinear:
         
         ops = self.diff()
         return sum(op.es_len for op in ops)
+
+    def _merge(self):
+        if len(self.diff_ops) == 0:
+            return
+        
+        merged_ops = []
+        curr = self.diff_ops[0]
+        
+        for next_op in self.diff_ops[1:]:
+            if isinstance(curr, Insert) and isinstance(next_op, Insert):
+                if curr.position == next_op.position:
+                    curr.payload += next_op.payload
+                    continue
+            
+            if isinstance(curr, Delete) and isinstance(next_op, Delete):
+                if next_op.position == curr.position + curr.length:
+                    curr.length += next_op.length
+                    continue
+
+            merged_ops.append(curr)
+            curr = next_op
+        merged_ops.append(curr)
+        self.diff_ops = merged_ops
+            
+    def _consolidate(self):
+        merged_ops = self.diff_ops
+        final_ops = []
+        i = 0
+        while i < len(merged_ops):
+            op = merged_ops[i]
+            if i + 1 < len(merged_ops):
+                next_op = merged_ops[i+1]
                 
+                if isinstance(op, Delete) and isinstance(next_op, Insert):
+                    if op.position == next_op.position:
+                        del_len = op.length
+                        ins_len = len(next_op.payload)
+                        common = min(del_len, ins_len)
+                        
+                        change_payload = next_op.payload[:common]
+                        final_ops.append(Change(op.position, change_payload))
+                        
+                        if del_len > common:
+                            rem_len = del_len - common
+                            rem_pos = op.position + common
+                            final_ops.append(Delete(rem_pos, rem_len))
+                        elif ins_len > common:
+                            rem_payload = next_op.payload[common:]
+                            rem_pos = op.position + common
+                            final_ops.append(Insert(rem_pos, rem_payload))
+                            
+                        i += 2
+                        continue
+            
+            final_ops.append(op)
+            i += 1
+
+        self.diff_ops = final_ops
+    
     def _find_path(self, left: int, top: int, right: int, bottom: int) -> None:
         box = Box(left, top, right, bottom)
         snake = self._midpoint(box)
@@ -116,7 +177,7 @@ class MyersLinear:
         
         if box.width == 0:
             if box.height > 0:
-                payload = self.B[box.top : box.bottom]
+                payload = self.B[box.top:box.bottom]
                 self.diff_ops.append(Insert(box.left, payload))
             return
 
@@ -132,7 +193,7 @@ class MyersLinear:
         dy = finish[1] - start[1]
 
         if dy > dx:
-            self.diff_ops.append(Insert(start[0], self.B[start[1]]))
+            self.diff_ops.append(Insert(start[0], self.B[start[1]:start[1]+1]))
         elif dx > dy:
             self.diff_ops.append(Delete(start[0], 1))
         
@@ -207,6 +268,11 @@ class MyersLinear:
 
 
 if __name__ == "__main__":            
-    myers = MyersLinear("abcabba", "cbabac")
-    print(myers.diff())
+    # myers = MyersLinear("abcabba", "cbabac")
+    # print(myers.diff())
+
+    # myers = MyersLinear("jbjqzkwcmbhawqmdg", "cnbtjoncoopbargkq")
+    # print(myers.diff())
+
+
 

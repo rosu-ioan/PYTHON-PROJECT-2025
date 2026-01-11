@@ -9,6 +9,7 @@ from diff import MyersLinear
 
 
 def random_validation(iters=20):
+    mismatch = False
     for i in range(iters):
         s1 = "".join(random.choices(string.ascii_lowercase, k=random.randint(5, 20)))
         s2 = "".join(random.choices(string.ascii_lowercase, k=random.randint(5, 20)))
@@ -20,7 +21,6 @@ def random_validation(iters=20):
         #print(f"S1: {s1} | S2: {s2}")
         actual_d = MyersLinear(s1, s2).ses()
 
-        mismatch = False
         
         if actual_d == expected_d:
             print(f"Test {i}: Match! (D={actual_d})")
