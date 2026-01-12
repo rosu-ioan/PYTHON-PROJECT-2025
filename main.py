@@ -76,6 +76,14 @@ def validate_update_command_args(args: argparse.Namespace):
     if not validate_file(args.file_path, mode="r+") or not validate_file(args.diff):
         sys.exit(1)
 
+    if args.name is not None:
+        if not validate_filename(name):
+            sys.exit(1)
+
+        if path.exists(name):
+            print_error(f"The file '{name}' already exists.")
+            sys.exit(1)
+        
     # TODO: actually check if the content of the file is correct, not just the extension
     if not args.diff.lower().strip().endswith(".diff"):
         print_error(f"{args.diff} is not a .diff file.")
@@ -95,6 +103,10 @@ def validate_create_command_args(args: argparse.Namespace):
     names = args.name if args.name is not None else []
     for name in names:
         if not validate_filename(name):
+            sys.exit(1)
+
+        if path.exists(name + ".diff"):
+            print_error(f"The file '{name + '.diff'}' already exists.")
             sys.exit(1)
     
     print_table_color({
@@ -127,6 +139,7 @@ def main():
     update_command_parser = subparsers.add_parser("update")
     update_command_parser.add_argument("file_path", help="The path to the file that would be modified")
     update_command_parser.add_argument("diff", help="The path to the .diff file that would be applied")
+    update_command_parser.add_argument("-n", "--name", help="The name of the resulting file")
 
     cmd_args = cmd_args_parser.parse_args()
 
@@ -136,6 +149,7 @@ def main():
             facade.execute_create_command(cmd_args)
         case "update":
             validate_update_command_args(cmd_args)
+            facade.execute_update_command(cmd_args)
     
         
 if __name__ == "__main__":

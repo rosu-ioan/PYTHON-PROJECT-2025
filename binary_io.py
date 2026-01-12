@@ -80,12 +80,7 @@ def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str,
             
             if not chunk_a and not chunk_b:
                 break
-                
-            # if not chunk_a:
-            #     chunk_a = b""
-            # if not chunk_b:
-            #     chunk_b = b""
-            
+                            
             ops = MyersLinear(chunk_a, chunk_b).diff()
             for op in ops:
                 op.position += abs_offset
@@ -123,3 +118,58 @@ def load_ops_from_file(diff_file_path: str) -> Generator[DiffOp, None, None]:
             elif code == OP_CHANGE:
                 payload = f.read(length)
                 yield Change(pos, payload)
+                
+def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
+    """
+    Applies a binary diff file to an old file to generate a new file.
+
+    Args:
+        old_file_path -- Path to the original file
+        diff_file_path -- Path to the .diff file
+        output_path -- Path where the new file will be written
+    """
+    
+    ops_generator = load_ops_from_file(diff_file_path)
+    
+    with open(old_file_path, "rb") as f_old, \
+         open(output_path, "wb") as f_new:
+        
+        cursor = 0 
+        
+        for op in ops_generator:
+            if op.position > cursor:
+                bytes_to_copy = op.position - cursor
+                _copy_chunk(f_old, f_new, bytes_to_copy)
+                cursor += bytes_to_copy
+            
+            if isinstance(op, Insert):
+                f_new.write(op.payload)
+                
+            elif isinstance(op, Delete):
+                f_old.seek(op.length, 1) 
+                cursor += op.length
+                
+            elif isinstance(op, Change):
+                f_new.write(op.payload)
+                f_old.seek(len(op.payload), 1)
+                cursor += len(op.payload)
+                
+        f_old.seek(0, 2)
+        total_size = f_old.tell()
+        f_old.seek(cursor) 
+
+        remaining_bytes = total_size - cursor
+
+        if remaining_bytes > 0:
+            _copy_chunk(f_old, f_new, remaining_bytes)
+
+
+def _copy_chunk(src: BinaryIO, dst: BinaryIO, amount: int, chunk_size: int = 1024 * 1024):
+    """Helper to copy 'amount' bytes from src to dst in chunks."""
+    remaining = amount
+    while remaining > 0:
+        to_read = min(remaining, chunk_size)
+        data = src.read(to_read)
+        if not data: break
+        dst.write(data)
+        remaining -= len(data)

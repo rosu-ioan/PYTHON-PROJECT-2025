@@ -290,9 +290,6 @@ def patch(original: bytes, operations: list[DiffOp]) -> bytes:
     
     Returns:
         The patched byte sequence
-        
-    Raises:
-        ValueError -- If operations are out of order or overlapping
     """
     
     result = bytearray()
