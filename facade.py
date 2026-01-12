@@ -6,6 +6,34 @@ import argparse
 import os
 from binary_io import generate_diff_file, apply_patch_file
 
+def files_are_identical(file_path_a: str, file_path_b: str, chunk_size: int = 2 ** 16) -> bool:
+    """
+    Checks if two files are identical by reading them in chunks.
+
+    Args:
+        file_path_a -- path to the first file
+        file_path_b -- path to the second file
+        chunk_size -- size of the chunk that will be read at a time
+    
+    Returns:
+        False immediately upon finding a mismatch
+    """
+    
+    if os.path.getsize(file_path_a) != os.path.getsize(file_path_b):
+        return False
+        
+    with open(file_path_a, "rb") as f_a, open(file_path_b, "rb") as f_b:
+        while True:
+            chunk_a = f_a.read(chunk_size)
+            chunk_b = f_b.read(chunk_size)
+            
+            if not chunk_a: 
+                return True
+            
+            if chunk_a != chunk_b:
+                return False
+                
+
 def execute_create_command(args: argparse.Namespace):
     """
     Execute the create command, creating a .diff file for every old file specified.
@@ -20,6 +48,10 @@ def execute_create_command(args: argparse.Namespace):
         names = None
         
     for idx, old_file in enumerate(args.old_files):
+        if files_are_identical(old_file, args.latest_file):
+            print(f"Skipping {old_file}: Identical to latest version.")
+            continue
+        
         if names is not None and idx < len(names):
             output_path = names[idx] + ".diff"
         else:
