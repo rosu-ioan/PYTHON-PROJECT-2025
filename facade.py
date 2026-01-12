@@ -86,7 +86,7 @@ def validate_update_command_args(args: argparse.Namespace):
             sys.exit(1)
 
         if os.path.exists(args.name):
-            print_error(f"The file '{name}' already exists.")
+            print_error(f"The file '{args.name}' already exists.")
             sys.exit(1)
         
     if not verify_diff_file(args.diff):
