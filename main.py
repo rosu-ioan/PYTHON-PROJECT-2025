@@ -2,6 +2,7 @@ from os import path
 from rich import print
 import argparse
 import sys
+import re
 
 import facade
 
@@ -16,6 +17,32 @@ def print_table_color(table: dict[str, str]):
     for name, value in table.items():
         print(f"[blue]{name:<{width}}[/blue]: {value}")
 
+def validate_filename(filename: str) -> bool:
+    """
+    Validate that a filename does not contain illegal characters.
+    
+    Args:
+        filename -- The filename to check
+
+    Returns:
+        True if the filename is valid and False otherwise
+    """
+        
+    if path.basename(filename) != filename:
+        print_error(f"Invalid filename '{filename}': Directory traversal (slashes) not allowed in name.")
+        return False
+    
+    result = re.search(r'[<>:"/\\|?*]', filename)
+    if result:
+        print_error(f"Invalid filename '{filename}': Contains illegal character '{result.group(0)}'.")
+        return False
+    
+    if filename.strip(" .") != filename:
+        print_error(f"Invalid filename '{filename}': Cannot end with a dot or space.")
+        return False
+
+    return True
+        
 def validate_file(file_path: str, mode: str = "r") -> bool:
     """
     Checks whether a file exists, is a regular file and can be accessed.
@@ -65,9 +92,15 @@ def validate_create_command_args(args: argparse.Namespace):
     if not validate_file(args.latest_file):
         sys.exit(1)
 
+    names = args.name if args.name is not None else []
+    for name in names:
+        if not validate_filename(name):
+            sys.exit(1)
+    
     print_table_color({
         "Latest file":args.latest_file,
-         **{f"Old version({i})":file_name for (i, file_name) in enumerate(args.old_files)}
+         **{f"Old version({i})":file_name for (i, file_name) in enumerate(args.old_files)},
+         **{f"Diff of ver.({i})":name + ".diff" for (i, name) in enumerate(names)}
     })
 
 def main():
@@ -84,7 +117,11 @@ def main():
     create_command_parser.add_argument("old_files", nargs="+",
                                        help="The path to one or more older versions of the file")
     create_command_parser.add_argument("latest_file", help="The path to the latest version of the file")
-    create_command_parser.add_argument("--chunk_size", help="The size of the chunk that will be read from both files at a time", type=int)
+    create_command_parser.add_argument("--chunk_size",
+                                       help="The size of the chunk that will be read from both files at a time",
+                                       type=int)
+    create_command_parser.add_argument("-n", "--name", nargs="*",
+                                       help="The name(s) of the resulting .diff file(s). If there are more 'old_files' than names the first 'old_files' would be given the names and the rest would remain default")
 
 
     update_command_parser = subparsers.add_parser("update")
