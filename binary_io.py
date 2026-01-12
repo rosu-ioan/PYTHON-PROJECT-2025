@@ -6,14 +6,25 @@ Implements the streaming generation of .diff files from large inputs.
 """
 
 import struct
+import hashlib
 from typing import List, Generator, BinaryIO
 from diff import Insert, Delete, Change, DiffOp, MyersLinear
 
 MAGIC_HEADER = b"MYDIFF"
-
+HASH_SIZE = 32
 OP_INSERT = 0x01
 OP_DELETE = 0x02
 OP_CHANGE = 0x03
+
+def compute_file_hash(file_path: str) -> bytes:
+    """ Computes SHA-256 hash of a file. """
+    sha256 = hashlib.sha256()
+    with open(file_path, "rb") as f:
+        chunk = f.read(2 ** 16)
+        while chunk:
+            sha256.update(chunk)
+            chunk = f.read(2 ** 16)
+    return sha256.digest()
 
 def encode_ops(operations: List[DiffOp]) -> bytes:
     """
@@ -65,12 +76,15 @@ def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str,
         output_path -- The path for the resulting .diff file
         chunk_size -- Size of the chunk that would be read from each file at a time
     """
+
+    old_file_hash = compute_file_hash(old_file_path)
     
     with open(old_file_path, "rb") as f_old, \
          open(new_file_path, "rb") as f_new, \
          open(output_path, "wb") as f_out:
         
         f_out.write(MAGIC_HEADER)
+        f_out.write(old_file_hash)
         
         abs_offset = 0
         
@@ -102,7 +116,7 @@ def load_ops_from_file(diff_file_path: str) -> Generator[DiffOp, None, None]:
         A generator that yields one DiffOp at a time from the .diff file
     """
     with open(diff_file_path, "rb") as f:
-        header = f.read(len(MAGIC_HEADER))
+        f.seek(len(MAGIC_HEADER) + HASH_SIZE)
             
         while True:
             chunk = f.read(17)
@@ -130,7 +144,7 @@ def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
     """
     
     ops_generator = load_ops_from_file(diff_file_path)
-    
+
     with open(old_file_path, "rb") as f_old, \
          open(output_path, "wb") as f_new:
         

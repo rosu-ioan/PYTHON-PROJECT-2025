@@ -4,7 +4,8 @@ Facade pattern exposing all the functionality from diff.py and binary_io.py to m
 
 import argparse
 import os
-from binary_io import generate_diff_file, apply_patch_file
+from binary_io import generate_diff_file, apply_patch_file, compute_file_hash, MAGIC_HEADER, HASH_SIZE
+from main import print_error
 
 def files_are_identical(file_path_a: str, file_path_b: str, chunk_size: int = 2 ** 16) -> bool:
     """
@@ -71,11 +72,19 @@ def execute_update_command(args: argparse.Namespace):
         args -- The arguments provided with the "update" command(file path, diff file path)
     """
 
+    file_hash = compute_file_hash(args.file_path)
+    with open(args.diff, "rb") as f_diff:
+        f_diff.seek(len(MAGIC_HEADER))
+        diff_hash = f_diff.read(HASH_SIZE)
+
+        if file_hash != diff_hash:
+            print_error(f"The hash value of the file '{args.file_path}' does not match the one of the diff '{args.diff}'")
+
     if args.name is None:
         basename = os.path.splitext(args.file_path)[0]
         extension = os.path.splitext(args.file_path)[1]
         output_path = basename + "(new)" + extension
     else:
         output_path = args.name
-
+        
     apply_patch_file(args.file_path, args.diff, output_path)
