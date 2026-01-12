@@ -5,11 +5,13 @@ Facade pattern exposing all the functionality from diff.py and binary_io.py to m
 import argparse
 import os
 import sys
-from binary_io import generate_diff_file, apply_patch_file, compute_file_hash, MAGIC_HEADER, HASH_SIZE, files_are_identical, verify_diff_file
+import re
+from binary_io import generate_diff_file, apply_patch_file, compute_file_hash, MAGIC_HEADER, HASH_SIZE, files_are_identical, verify_diff_file, CHUNK_SIZE
 from utils import print_error, print_table_color
+from rich.progress import Progress, SpinnerColumn, BarColumn, TextColumn, TimeRemainingColumn, TransferSpeedColumn
 
 def check_file_hash(file_path:str, diff_path: str) -> bool:
-    """ Helper function to verify that the has of the old file and .diff file match. """
+    """ Helper function to verify that the hash of the old file and .diff file match. """
     file_hash = compute_file_hash(file_path)
     with open(diff_path, "rb") as f_diff:
         f_diff.seek(len(MAGIC_HEADER))
@@ -80,10 +82,10 @@ def validate_update_command_args(args: argparse.Namespace):
         sys.exit(1)
 
     if args.name is not None:
-        if not validate_filename(name):
+        if not validate_filename(args.name):
             sys.exit(1)
 
-        if os.path.exists(name):
+        if os.path.exists(args.name):
             print_error(f"The file '{name}' already exists.")
             sys.exit(1)
         
@@ -141,9 +143,23 @@ def execute_create_command(args: argparse.Namespace):
             old_file_name = os.path.splitext(old_file)[0]
             latest_file_name = os.path.splitext(args.latest_file)[0]
             output_path = old_file_name + "-" + latest_file_name + ".diff"
-
-        chunk_size = args.chunk_size if args.chunk_size != None else 1024 * 1024
-        generate_diff_file(old_file, args.latest_file, output_path, chunk_size)
+            
+        chunk_size = args.chunk_size if args.chunk_size != None else CHUNK_SIZE
+        
+        total_size = max(os.path.getsize(old_file), os.path.getsize(args.latest_file))
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            BarColumn(),
+            TransferSpeedColumn(),
+            TimeRemainingColumn(),
+        ) as progress:
+            task = progress.add_task(f"[green]Processing {os.path.basename(old_file)}...", total=total_size)
+            
+            def update_bar(bytes_processed):
+                progress.update(task, advance=bytes_processed)
+            
+            generate_diff_file(old_file, args.latest_file, output_path, chunk_size, progress_callback=update_bar)
 
         
 def execute_update_command(args: argparse.Namespace):
@@ -168,6 +184,20 @@ def execute_update_command(args: argparse.Namespace):
     else:
         output_path = args.name
         
-    apply_patch_file(args.file_path, args.diff, output_path)
+    total_size = os.path.getsize(args.file_path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TransferSpeedColumn(),
+        TimeRemainingColumn(),
+    ) as progress:
+        task = progress.add_task(f"[blue]Patching {os.path.basename(args.file_path)}...", total=total_size)
+        
+        def update_bar(bytes_processed):
+            progress.update(task, advance=bytes_processed)
+            
+        apply_patch_file(args.file_path, args.diff, output_path, progress_callback=update_bar)
 
 

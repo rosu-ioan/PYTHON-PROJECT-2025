@@ -12,6 +12,8 @@ from typing import List, Generator, BinaryIO
 from diff import Insert, Delete, Change, DiffOp, MyersLinear
 from utils import print_error
 
+CHUNK_SIZE = 2 * 12
+
 MAGIC_HEADER = b"MYDIFF"
 HASH_SIZE = 32
 OP_INSERT = 0x01
@@ -22,10 +24,10 @@ def compute_file_hash(file_path: str) -> bytes:
     """ Computes SHA-256 hash of a file. """
     sha256 = hashlib.sha256()
     with open(file_path, "rb") as f:
-        chunk = f.read(2 ** 16)
+        chunk = f.read(CHUNK_SIZE)
         while chunk:
             sha256.update(chunk)
-            chunk = f.read(2 ** 16)
+            chunk = f.read(CHUNK_SIZE)
     return sha256.digest()
 
 def encode_ops(operations: List[DiffOp]) -> bytes:
@@ -68,7 +70,8 @@ def encode_ops(operations: List[DiffOp]) -> bytes:
             
     return bytes(binary_buffer)
 
-def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str, chunk_size: int = 1024 * 1024):
+def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str,
+                       chunk_size: int = CHUNK_SIZE, progress_callback = None):
     """
     Reads two files in chunks, calculates diffs, and streams the binary output to a .diff file.
 
@@ -77,6 +80,7 @@ def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str,
         new_file_path -- The path to the target file that the old file would be modified into
         output_path -- The path for the resulting .diff file
         chunk_size -- Size of the chunk that would be read from each file at a time
+        progress_callback -- Optional callback to report bytes processed
     """
 
     old_file_hash = compute_file_hash(old_file_path)
@@ -96,7 +100,10 @@ def generate_diff_file(old_file_path: str, new_file_path: str, output_path: str,
             
             if not chunk_a and not chunk_b:
                 break
-                            
+
+            if progress_callback:
+                progress_callback(max(len(chunk_a), len(chunk_b)))
+            
             ops = MyersLinear(chunk_a, chunk_b).diff()
             for op in ops:
                 op.position += abs_offset
@@ -135,7 +142,7 @@ def load_ops_from_file(diff_file_path: str) -> Generator[DiffOp, None, None]:
                 payload = f.read(length)
                 yield Change(pos, payload)
                 
-def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
+def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str, progress_callback = None):
     """
     Applies a binary diff file to an old file to generate a new file.
 
@@ -143,6 +150,7 @@ def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
         old_file_path -- Path to the original file
         diff_file_path -- Path to the .diff file
         output_path -- Path where the new file will be written
+        progress_callback -- Optional callback to report bytes processed from old file
     """
     
     ops_generator = load_ops_from_file(diff_file_path)
@@ -157,6 +165,9 @@ def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
                 bytes_to_copy = op.position - cursor
                 _copy_chunk(f_old, f_new, bytes_to_copy)
                 cursor += bytes_to_copy
+
+                if progress_callback:
+                    progress_callback(bytes_to_copy)
             
             if isinstance(op, Insert):
                 f_new.write(op.payload)
@@ -164,11 +175,17 @@ def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
             elif isinstance(op, Delete):
                 f_old.seek(op.length, 1) 
                 cursor += op.length
+
+                if progress_callback:
+                    progress_callback(op.length)
                 
             elif isinstance(op, Change):
                 f_new.write(op.payload)
                 f_old.seek(len(op.payload), 1)
                 cursor += len(op.payload)
+
+                if progress_callback:
+                    progress_callback(len(op.payload))
                 
         f_old.seek(0, 2)
         total_size = f_old.tell()
@@ -179,8 +196,11 @@ def apply_patch_file(old_file_path: str, diff_file_path: str, output_path: str):
         if remaining_bytes > 0:
             _copy_chunk(f_old, f_new, remaining_bytes)
 
+            if progress_callback:
+                progress_callback(remaining_bytes)
 
-def _copy_chunk(src: BinaryIO, dst: BinaryIO, amount: int, chunk_size: int = 1024 * 1024):
+
+def _copy_chunk(src: BinaryIO, dst: BinaryIO, amount: int, chunk_size: int = CHUNK_SIZE):
     """Helper to copy 'amount' bytes from src to dst in chunks."""
     remaining = amount
     while remaining > 0:
@@ -190,7 +210,7 @@ def _copy_chunk(src: BinaryIO, dst: BinaryIO, amount: int, chunk_size: int = 102
         dst.write(data)
         remaining -= len(data)
 
-def files_are_identical(file_path_a: str, file_path_b: str, chunk_size: int = 2 ** 16) -> bool:
+def files_are_identical(file_path_a: str, file_path_b: str, chunk_size: int = CHUNK_SIZE) -> bool:
     """
     Checks if two files are identical by reading them in chunks.
 

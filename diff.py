@@ -36,7 +36,7 @@ class Delete:
 
 @dataclass
 class Change:
-    """Represent change operation(a delete followed immediately by an insert"""
+    """Represent change operation(a delete followed immediately by an insert)"""
     position: int
     payload: bytes
     @property
